@@ -57,6 +57,18 @@ def test_pdf_file_text_extractor():
     assert len(result) == 3
 
 
+def test_pdf_file_text_span_extractor():
+    content = tmp_pdf_doc(["This is a text file"])
+
+    result = extract_document_pages(filename="report.pdf", content=content)
+
+    assert result[0].spans[0].text == "This is a text file"
+    assert result[0].spans[0].font is not None
+    assert result[0].spans[0].font_size is not None
+    assert result[0].spans[0].flags is not None
+    assert result[0].spans[0].bbox is not None
+
+
 def test_malformed_pdf_file():
 
     text = b"An invalid pdf text file"

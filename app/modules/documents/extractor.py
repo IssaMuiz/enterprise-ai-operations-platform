@@ -2,13 +2,42 @@ from pathlib import Path
 
 import pymupdf
 
-from .entities import DocumentPage
+from .entities import DocumentPage, TextSpan
 
 
 class DocumentExtractionError(Exception):
     """raise when the document extraction fail"""
 
     pass
+
+
+def extract_text_span(page: pymupdf.Page) -> list[TextSpan]:
+    spans = []
+
+    blocks = page.get_text("dict")["blocks"]
+
+    for block in blocks:
+        if "lines" not in block:
+            continue
+
+        for lines in block["lines"]:
+            for span in lines["spans"]:
+                text = span["text"]
+
+                if not text.strip():
+                    continue
+
+                spans.append(
+                    TextSpan(
+                        text=text,
+                        font=span.get("font"),
+                        font_size=span.get("size"),
+                        flags=span.get("flags"),
+                        bbox=span.get("bbox"),
+                    )
+                )
+
+    return spans
 
 
 def extract_document_pages(filename: str, content: bytes) -> list[DocumentPage]:
@@ -34,9 +63,12 @@ def extract_document_pages(filename: str, content: bytes) -> list[DocumentPage]:
             pages = []
             with pymupdf.open(stream=content, filetype="pdf") as document:
                 for page_number, page in enumerate(document, start=1):
+                    text_span = extract_text_span(page)
                     page_text = page.get_text("text")
                     pages.append(
-                        DocumentPage(content=page_text, page_number=page_number)
+                        DocumentPage(
+                            content=page_text, page_number=page_number, spans=text_span
+                        )
                     )
 
             return pages
