@@ -9,7 +9,6 @@ from .entities import (
     TextSpan,
 )
 
-
 _BOLD_FLAG = 16
 _HEADING_SIZE_RATIO = 1.15
 _MAX_BOLD_HEADING_LENGTH = 120
