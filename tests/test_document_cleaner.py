@@ -1,15 +1,26 @@
 from app.modules.documents.cleaner import clean_document, clean_text
-from app.modules.documents.entities import Document, DocumentPage
+from app.modules.documents.entities import Document, DocumentPage, TextSpan
 
 
 def create_mock_pdf_document(pages: list[str]):
-
     return Document(
         filename="report.pdf",
         file_type="pdf",
         file_size=2,
         pages=[
-            DocumentPage(content=page, page_number=page_number)
+            DocumentPage(
+                content=page,
+                page_number=page_number,
+                spans=[
+                    TextSpan(
+                        text=page,
+                        font="Arial-Bold",
+                        font_size=18.0,
+                        flags=16,
+                        bbox=(50.0, 40.0, 200.0, 65.0),
+                    ),
+                ],
+            )
             for page_number, page in enumerate(pages, start=1)
         ],
     )
@@ -69,7 +80,7 @@ def test_text_with_multiple_lines():
     assert result == "first line\n\nsecond line"
 
 
-def test_clean_pdf_document():
+def test_cleaned_pdf_document():
     document = create_mock_pdf_document(
         [
             "page 1\r\nfirst line",
@@ -83,11 +94,29 @@ def test_clean_pdf_document():
     assert result.filename == "report.pdf"
     assert result.file_size == 2
     assert result.file_type == "pdf"
-    assert len(result.pages) == 3
+    assert result.page_count == 3
     assert [page.page_number for page in result.pages] == [1, 2, 3]
     assert result.pages[0].content == "page 1\nfirst line"
     assert result.pages[1].content == "page 2\nfirst line"
     assert result.pages[2].content == "page 3\n\nfirst line"
+
+
+def test_cleaned_pdf_document_preserve_span():
+    document = create_mock_pdf_document(
+        [
+            "page 1\r\nfirst line",
+            "     page 2     \nfirst line",
+            "page 3\n\n\n\n\nfirst line",
+        ]
+    )
+
+    result = clean_document(document)
+
+    assert result.pages[0].spans[0].text == "page 1\r\nfirst line"
+    assert result.pages[0].spans[0].font == "Arial-Bold"
+    assert result.pages[0].spans[0].flags == 16
+    assert result.pages[0].spans[0].font_size == 18.0
+    assert result.pages[0].spans[0].bbox == (50.0, 40.0, 200.0, 65.0)
 
 
 def test_unchanged_original_document():

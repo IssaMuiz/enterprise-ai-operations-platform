@@ -25,6 +25,7 @@ def clean_document(document: Document) -> Document:
             page_number=page.page_number,
             start_line=page.start_line,
             end_line=page.end_line,
+            spans=list(page.spans),
         )
         for page in document.pages
     ]
@@ -33,5 +34,6 @@ def clean_document(document: Document) -> Document:
         filename=document.filename,
         file_type=document.file_type,
         file_size=document.file_size,
+        metadata=document.metadata,
         pages=cleaned_pages,
     )

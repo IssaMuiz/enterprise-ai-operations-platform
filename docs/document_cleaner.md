@@ -1,98 +1,198 @@
 # Document Cleaner
 
-## Overview
+## 1. Overview
 
-The document cleaner normalizes extracted document text before it moves to subsequent document-processing stages.
+The document cleaner is responsible for normalizing extracted document text while preserving the document's existing page structure and extracted layout information.
 
-It operates on individual page contents while returning a new `Document` containing the cleaned pages.
+It operates on application-level `Document` entities rather than directly accessing PDF files or using PyMuPDF.
 
-The cleaner is responsible for text normalization, not document structure interpretation.
+The cleaner currently supports documents represented using the application's `Document` and `DocumentPage` entities.
 
-## Module
+## 2. Responsibilities
 
-`app/modules/documents/cleaner.py`
+The cleaner is responsible for:
 
-## Public Functions
+- Normalizing line endings.
+- Removing unnecessary trailing whitespace.
+- Removing unnecessary leading and trailing document whitespace.
+- Reducing excessive consecutive blank lines.
+- Cleaning individual document pages.
+- Preserving page numbers and line information.
+- Preserving extracted text spans and their formatting information.
+- Returning a new `Document` without modifying the original document.
 
-### `clean_text(text: str) -> str`
+The cleaner does not extract text, interpret document structures, identify headings, or classify content.
 
-Cleans a single text string.
+## 3. Architecture
 
-**Responsibilities:**
+The cleaning process follows this structure:
 
-- Normalize Windows (`\r\n`), Unix (`\n`) and old Mac (`\r`) line endings to `\n`.
-- Remove trailing whitespace from each line.
-- Remove leading and trailing whitespace from the complete text.
-- Collapse three or more consecutive newline characters into two.
+```text
+Extracted Document
+        |
+        v
+   Document
+        |
+        v
+ Iterate Through Pages
+        |
+        v
+    clean_text()
+        |
+        v
+ Normalize Page Content
+        |
+        v
+ Preserve Page Information
+        |
+        v
+ Preserve Original Spans
+        |
+        v
+ Create New DocumentPage
+        |
+        v
+ Create New Document
+        |
+        v
+ Return Cleaned Document
+```
 
-**Input:** A string containing extracted text.
+## 4. Text Normalization
 
-**Output:** A normalized string.
+The cleaner uses Python's `re` module to normalize extracted text.
 
-### `clean_document(document: Document) -> Document`
+### 4.1 Line-ending normalization
 
-Cleans all pages belonging to a document.
+Different operating systems represent line endings differently.
 
-**Responsibilities:**
+The cleaner converts:
 
-- Process each page independently using `clean_text()`.
-- Create new `DocumentPage` objects.
-- Preserve page metadata, including page numbers and line information.
-- Preserve document metadata, including filename, file type and file size.
-- Return a new `Document` without modifying the original.
+- Windows line endings (`\r\n`) into `\n`.
+- Old Mac-style line endings (`\r`) into `\n`.
 
-**Input:** A `Document` instance.
+This provides a consistent line-ending representation.
 
-**Output:** A new `Document` containing cleaned pages.
+### 4.2 Trailing whitespace removal
 
-## Processing Flow
+The cleaner removes trailing whitespace from individual lines.
 
-1. Receive an extracted `Document`.
-2. Iterate through its pages.
-3. Normalize each page's text.
-4. Create a new page with the cleaned text and original metadata.
-5. Create and return a new document containing the cleaned pages.
+This prevents unnecessary spaces at the end of extracted lines.
 
-## Design Decisions
+### 4.3 Surrounding whitespace removal
 
-### Page-level cleaning
+The cleaner uses `strip()` to remove unnecessary whitespace at the beginning and end of the complete text.
 
-Each page is cleaned independently to preserve the boundaries between pages.
+### 4.4 Consecutive blank-line reduction
 
-### Immutability
+The cleaner reduces three or more consecutive newline characters to two.
 
-The cleaner does not modify the original document or its page objects. It constructs new objects instead.
+This preserves paragraph separation while removing excessive blank lines.
 
-This helps prevent unintended side effects when different processing components need access to the original extracted content.
+## 5. Document Cleaning
 
-### Separation of responsibilities
+### `clean_text(text)`
 
-The cleaner handles text normalization only.
+Accepts a string and returns its normalized representation.
 
-Paragraph detection, heading identification, document structure interpretation and OCR are outside its current scope.
+The function performs the text normalization operations described above.
 
-## Testing
+### `clean_document(document)`
 
-The cleaner is tested for:
+Accepts a `Document` entity and returns a new cleaned `Document`.
 
-- Different line-ending formats.
-- Leading and trailing whitespace.
-- Trailing whitespace on individual lines.
-- Multiple consecutive blank lines.
-- PDF document cleaning.
+For every page, it:
+
+1. Normalizes the page's complete text using `clean_text()`.
+2. Preserves the page number.
+3. Preserves the original line information.
+4. Preserves the extracted text spans.
+
+The function creates new `DocumentPage` instances and a new `Document` instance.
+
+## 6. Span Preservation
+
+The `DocumentPage` entity contains both:
+
+- `content`: the complete extracted page text.
+- `spans`: individual extracted text segments containing formatting and positional information.
+
+The cleaner normalizes `content` but deliberately preserves the original spans.
+
+This distinction is important.
+
+The span text is not independently normalized because individual spans may represent different formatting runs, and whitespace may exist between spans.
+
+Changing individual span text could affect the ability to reconstruct the original document layout.
+
+The two representations therefore serve different purposes:
+
+| Representation       | Purpose                                                 |
+| -------------------- | ------------------------------------------------------- |
+| Cleaned page content | Downstream text processing, chunking and retrieval      |
+| Original text spans  | Layout-aware structural parsing and formatting analysis |
+
+This is an intentional design decision.
+
+## 7. Data Preservation
+
+The cleaner creates new page and document objects instead of modifying the original objects.
+
+The original document remains available after cleaning.
+
+The cleaner also creates a separate spans list for each cleaned page while preserving the existing `TextSpan` objects.
+
+This prevents the original and cleaned pages from sharing the same mutable list.
+
+## 8. Error Handling
+
+The cleaner currently relies on its input contract:
+
+- `clean_text()` expects a string.
+- `clean_document()` expects a valid `Document` entity.
+
+The cleaner does not handle file-reading, PDF-decoding, or extraction errors because these responsibilities belong to the extractor.
+
+## 9. Testing Strategy
+
+The cleaner is tested independently of PyMuPDF.
+
+Mock `Document` and `DocumentPage` entities are used to provide representative extracted document data.
+
+The test suite covers:
+
+- Windows line-ending normalization.
+- Old Mac-style line-ending normalization.
+- Surrounding whitespace removal.
+- Trailing whitespace removal.
+- Multiple blank-line reduction.
+- Multi-page PDF document cleaning.
+- Text span preservation.
+- Original document preservation.
+- Empty page handling.
+- Documents without pages.
 - TXT document cleaning.
-- Empty pages and documents without pages.
-- Preservation of document and page metadata.
-- Preservation of the original document and page objects.
+- Metadata preservation.
 
-Test module: `tests/test_cleaner.py`
+The tests verify that cleaning produces the expected normalized content without modifying the original document or losing its extracted layout information.
 
-## Current Limitations
+## 10. Current Limitations
 
-- Does not reconstruct paragraph boundaries.
-- Does not identify headings or sections.
-- Does not perform OCR on scanned documents.
-- Does not interpret document layout.
-- Does not implement language-specific normalization.
+- Cleaning operates on complete page text rather than individual text spans.
+- The cleaner does not identify headings or paragraphs.
+- The cleaner does not reconstruct document layout.
+- It does not process tables or images.
+- It does not perform OCR.
+- It does not correct spelling or interpret document meaning.
 
-These capabilities may be addressed by future document-processing components.
+These responsibilities belong to other stages of the document-processing pipeline.
+
+## 11. Downstream Integration
+
+The cleaner receives the `Document` produced by the document ingestion process.
+
+Its output can subsequently be passed to the document parser.
+
+The parser will use the preserved span information to identify structural elements such as headings and paragraphs.
+
+The cleaned page content will also be available for subsequent document-processing operations, including chunking and retrieval.

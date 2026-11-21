@@ -2,186 +2,221 @@
 
 ## 1. Overview
 
-The document extractor is responsible for retrieving textual content from supported document formats and converting the extracted content into structured application-level entities.
+The document extractor is responsible for extracting text and layout information from supported document formats and converting the extracted information into application-level `DocumentPage` entities.
 
-It provides the text extraction capability used by subsequent document processing stages.
+It currently supports:
 
-The current implementation supports PDF and plain text documents.
+- PDF (`.pdf`)
+- Plain text (`.txt`)
 
-## 2. Responsibility
+For PDF documents, the extractor retrieves both the complete page text and individual text spans with their formatting and positional information.
+
+For TXT documents, it extracts the text content and records the original line range.
+
+## 2. Responsibilities
 
 The extractor is responsible for:
 
-- Accepting document filenames and binary content.
-- Identifying supported document formats through file extensions.
-- Extracting text from PDF documents.
-- Extracting text from plain text documents.
-- Preserving PDF page boundaries.
-- Recording relevant source-location metadata.
-- Converting extracted content into `DocumentPage` entities.
-- Handling expected extraction failures.
+- Validating the filename and file content types.
+- Checking supported file extensions.
+- Extracting text from PDF and TXT documents.
+- Extracting PDF text spans and their layout information.
+- Preserving page ordering and page numbers.
+- Recording line information for TXT documents.
+- Converting extraction results into `DocumentPage` entities.
+- Handling expected extraction and decoding failures.
 
-The extractor does not perform document validation based on maximum file size, advanced text cleaning, classification or semantic processing.
+The extractor does not clean, normalize, classify, or parse the extracted document content.
 
-## 3. Supported Formats
+## 3. Architecture
 
-| Format     | Extension | Extraction library    |
-| ---------- | --------- | --------------------- |
-| PDF        | `.pdf`    | PyMuPDF               |
-| Plain text | `.txt`    | Python UTF-8 decoding |
+The extraction process follows this structure:
 
-File extension matching is case-insensitive.
+```text
+Uploaded File
+     |
+     v
+Input Validation
+     |
+     v
+File Extension Detection
+     |
+     +----------------------+
+     |                      |
+     v                      v
+    PDF                    TXT
+     |                      |
+     v                      v
+Open with PyMuPDF       Decode UTF-8
+     |                      |
+     v                      v
+Extract Page Text       Identify Line Range
+     |                      |
+     v                      v
+Extract Text Spans      Create DocumentPage
+     |                      |
+     v                      |
+Create DocumentPage <------+
+     |
+     v
+Return List[DocumentPage]
+```
 
-## 4. Function Interface
+## 4. PDF Extraction
 
-### `extract_document_pages()`
+PDF extraction uses PyMuPDF.
 
-**Module:** `app.modules.documents.extractor`
+The extractor opens PDF content from bytes and iterates through its pages.
 
-**Parameters:**
+For every page, it extracts:
 
-| Parameter  | Type    | Description                     |
-| ---------- | ------- | ------------------------------- |
-| `filename` | `str`   | Original document filename.     |
-| `content`  | `bytes` | Binary content of the document. |
+### 4.1 Complete page text
 
-**Return type:**
+The complete text is obtained using:
 
-`list[DocumentPage]`
+```python
+page.get_text("text")
+```
 
-The function returns a list of extracted document content entities.
+This provides the page's text content for subsequent processing.
 
-## 5. PDF Extraction
+### 4.2 Text span extraction
 
-PDF extraction is implemented using PyMuPDF.
+The extractor uses:
 
-The extraction process:
+```python
+page.get_text("dict")
+```
 
-1. Opens the PDF from its in-memory binary content.
-2. Iterates through the document's physical pages.
-3. Extracts text from each page.
-4. Creates a `DocumentPage` entity for each physical page.
-5. Assigns page numbers starting from 1.
-6. Returns the collection of extracted pages.
+PyMuPDF represents PDF text using a hierarchy:
 
-### Output representation
+```text
+Page
+ └── Blocks
+      └── Lines
+           └── Spans
+```
 
-Each physical PDF page is represented by a separate `DocumentPage`.
+The extractor traverses this hierarchy and collects individual text spans.
 
-For example, a PDF containing three physical pages produces three extracted entities:
+Whitespace-only spans are excluded from the current extraction output.
 
-| Entity | Page number | Content                    |
-| ------ | ----------: | -------------------------- |
-| First  |           1 | Extracted text from page 1 |
-| Second |           2 | Extracted text from page 2 |
-| Third  |           3 | Extracted text from page 3 |
+Each extracted span is represented by a `TextSpan` entity.
 
-The extractor preserves the text returned by PyMuPDF, including trailing newline characters where present.
+### 4.3 TextSpan attributes
 
-## 6. Plain Text Extraction
+| Attribute   | Description                   |
+| ----------- | ----------------------------- |
+| `text`      | Extracted text content        |
+| `font`      | Font name                     |
+| `font_size` | Font size                     |
+| `flags`     | PyMuPDF font-style flags      |
+| `bbox`      | Text bounding box coordinates |
 
-TXT extraction uses Python's UTF-8 decoding functionality.
+The bounding box is represented as:
 
-The extraction process:
+```python
+(x0, y0, x1, y1)
+```
 
-1. Decodes the binary content using UTF-8.
-2. Checks whether the decoded content is empty.
-3. Determines the number of logical lines.
-4. Creates one `DocumentPage` entity containing the complete text.
-5. Records the starting and ending line numbers.
+These attributes preserve useful layout information for downstream document parsing.
 
-### Output representation
+### 4.4 Page representation
 
-Unlike PDF extraction, the entire TXT file is represented by one `DocumentPage`.
+Each extracted PDF page becomes a `DocumentPage` containing:
 
-For a non-empty text file:
+- Complete page text.
+- Page number.
+- Extracted text spans.
 
-- `start_line` begins at 1.
-- `end_line` represents the number of lines returned by `splitlines()`.
-- `content` preserves the decoded text.
+The page number starts at 1.
 
-An empty TXT file returns an empty list.
+## 5. TXT Extraction
 
-## 7. DocumentPage Entity
+TXT files are decoded using UTF-8.
 
-The extractor uses the `DocumentPage` data class defined in `entities.py`.
+The extractor:
 
-Its fields are:
+1. Decodes the supplied bytes.
+2. Checks whether the content is empty.
+3. Determines the number of lines.
+4. Creates a `DocumentPage` containing the original text and line range.
 
-| Field         | Type          | Description                                            |
-| ------------- | ------------- | ------------------------------------------------------ |
-| `content`     | `str`         | Extracted textual content.                             |
-| `page_number` | `int \| None` | Physical PDF page number, when applicable.             |
-| `start_line`  | `int \| None` | Starting line number for TXT content, when applicable. |
-| `end_line`    | `int \| None` | Ending line number for TXT content, when applicable.   |
+TXT documents do not contain PDF-style font or positional metadata, so their spans list remains empty.
 
-Optional metadata fields are set to `None` when they do not apply to the extracted format.
+For non-empty TXT documents, the page starts at line 1 and ends at the number of extracted lines.
 
-## 8. Error Handling
+An empty TXT file returns an empty list of pages.
 
-The extractor defines a custom exception:
+## 6. Input Validation
 
-### `DocumentExtractionError`
+The extractor validates:
 
-This exception represents expected failures during document extraction.
+- Filename must be a string.
+- File content must be bytes.
+- Filename must not be empty after trimming whitespace.
+- File extension must be supported.
 
-| Condition                    | Exception                 |
-| ---------------------------- | ------------------------- |
-| Filename has an invalid type | `TypeError`               |
-| Content has an invalid type  | `TypeError`               |
-| Filename is empty            | `ValueError`              |
-| Unsupported file extension   | `ValueError`              |
-| Malformed or unreadable PDF  | `DocumentExtractionError` |
-| Invalid UTF-8 content        | `DocumentExtractionError` |
+Unsupported extensions and invalid input values raise appropriate validation exceptions.
 
-The extractor uses exception chaining to preserve the original underlying exception, making debugging easier.
+## 7. Error Handling
 
-## 9. Dependencies
+The extractor defines:
 
-The current implementation uses:
+```python
+class DocumentExtractionError(Exception):
+    """Raised when document extraction fails."""
+```
 
-- **PyMuPDF:** PDF document opening and text extraction.
-- **pathlib:** File extension identification.
-- **dataclasses:** Structured representation through the `DocumentPage` entity.
+Expected extraction failures are wrapped in this application-specific exception.
 
-## 10. Testing
+Current handled failures include:
 
-The extractor is tested using pytest.
+- Invalid or malformed PDF data resulting in `pymupdf.FileDataError`.
+- Invalid UTF-8 text resulting in `UnicodeDecodeError`.
 
-Test coverage includes:
+## 8. Public Functions
+
+### `extract_document_pages(filename, content)`
+
+Extracts supported document content and returns a list of `DocumentPage` entities.
+
+### `extract_text_span(page)`
+
+Extracts individual text spans from a PyMuPDF page and returns a list of `TextSpan` entities.
+
+## 9. Testing Strategy
+
+The extractor is tested using actual PDF documents generated programmatically with PyMuPDF.
+
+The test suite covers:
 
 - Invalid filename types.
 - Empty filenames.
-- Invalid binary content types.
-- Unsupported file extensions.
+- Invalid content types.
+- Unsupported extensions.
 - Multi-page PDF extraction.
-- PDF page numbering.
-- Malformed PDF input.
-- Plain text extraction.
-- TXT line metadata.
-- Empty TXT documents.
+- PDF text extraction.
+- PDF span extraction.
+- Malformed PDF files.
+- TXT extraction.
+- Empty TXT files.
 - Invalid UTF-8 content.
 
-PDF test documents are generated programmatically using PyMuPDF, avoiding dependence on external PDF fixtures.
+Generated PDF fixtures allow the extractor to be tested against real PDF structures without depending on external document files.
 
-## 11. Current Limitations
+## 10. Current Limitations
 
-The extractor currently provides basic text extraction.
+- PDF extraction focuses on text and span information.
+- Tables and complex document structures are not currently interpreted.
+- TXT files do not provide PDF-style layout information.
+- PDF metadata extraction is not currently part of the `extract_document_pages()` function.
+- Scanned PDFs requiring OCR are not currently supported.
 
-It does not yet support:
+## 11. Downstream Integration
 
-- OCR for scanned PDFs and image-based documents.
-- Image extraction.
-- Table extraction.
-- DOCX, XLSX or other document formats.
-- Advanced text cleaning and normalization.
-- Structured content parsing.
-- Document classification.
-- Text chunking.
-- Embedding generation.
+The extractor produces `DocumentPage` entities consumed by the document cleaner.
 
-These capabilities will be considered in subsequent document processing stages.
+The cleaner normalizes the complete page text while retaining the original extracted span information for later structural parsing.
 
----
-
-**Implementation status:** PDF and TXT text extraction implemented and tested.
+The extracted spans will also support the document parser when identifying headings and paragraphs.
