@@ -60,3 +60,15 @@ class ParsedDocument:
     @property
     def page_count(self):
         return len(self.pages)
+
+
+@dataclass(frozen=True)
+class DocumentChunk:
+    content: str
+    chunk_index: int
+    filename: str
+    file_type: str
+    page_number: int | None = None
+    section_heading: str | None = None
+    metadata: dict[str, str | None] = field(default_factory=dict)
+    source_element_types: tuple[Literal["heading", "paragraph"], ...] = ()
