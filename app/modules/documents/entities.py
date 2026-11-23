@@ -79,3 +79,11 @@ class EmbeddedChunk:
     chunk: DocumentChunk
     vector: tuple[float, ...]
     model: str
+
+
+@dataclass(frozen=True)
+class DocumentProcessingResult:
+    document: Document
+    parsed_document: ParsedDocument
+    chunks: list[DocumentChunk] = field(default_factory=list)
+    embedded_chunks: list[EmbeddedChunk] = field(default_factory=list)
