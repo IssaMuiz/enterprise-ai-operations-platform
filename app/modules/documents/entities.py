@@ -72,3 +72,10 @@ class DocumentChunk:
     section_heading: str | None = None
     metadata: dict[str, str | None] = field(default_factory=dict)
     source_element_types: tuple[Literal["heading", "paragraph"], ...] = ()
+
+
+@dataclass(frozen=True)
+class EmbeddedChunk:
+    chunk: DocumentChunk
+    vector: tuple[float, ...]
+    model: str

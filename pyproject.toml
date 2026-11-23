@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "An enterprise AI operations platform for intelligent document processing and business workflows."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "httpx>=0.28.1",
     "pymupdf>=2.1",
 ]
 
